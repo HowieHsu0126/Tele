@@ -1,17 +1,21 @@
-import pandas as pd
-import logging
 import datetime
+import logging
+
+import pandas as pd
+
 
 class Logger:
     @staticmethod
     def setup_logger():
         logger = logging.getLogger('baseline_model')
         logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler(f'/sda/xuhaowei/Research/Tele/Output/logs/baseline_model_{datetime.datetime.now()}.log')
+        fh = logging.FileHandler(
+            f'/sda/xuhaowei/Research/Tele/Output/logs/baseline_model_{datetime.datetime.now()}.log')
         fh.setLevel(logging.DEBUG)
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
         logger.addHandler(fh)
