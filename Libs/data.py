@@ -198,5 +198,5 @@ class Datasets:
         data_frames = self.feature_engineering(data_frames, logger)
         train_data, validation_res = data_frames['train_data'], data_frames['validation_res']
         X, y, X_val = self.prepare_datasets(train_data, validation_res)
-        self.adversarial_validation(X, X_val, logger)
+        # self.adversarial_validation(X, X_val, logger)
         return X, y, X_val, validation_res

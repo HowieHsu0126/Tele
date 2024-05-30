@@ -50,12 +50,12 @@ class Models:
         logger.info("Evaluating multiple models...")
         models = {
             'RandomForest': RandomForestClassifier(),
-            'ExtraTrees': ExtraTreesClassifier(),
-            'AdaBoost': AdaBoostClassifier(),
-            'HistGradientBoosting': HistGradientBoostingClassifier(),
-            'XGBoost': xgb.XGBClassifier(use_label_encoder=False, eval_metric='logloss'),
-            'LightGBM': lgb.LGBMClassifier(),
-            'CatBoost': CatBoostClassifier(verbose=0)
+            # 'ExtraTrees': ExtraTreesClassifier(),
+            # 'AdaBoost': AdaBoostClassifier(),
+            # 'HistGradientBoosting': HistGradientBoostingClassifier(),
+            # 'XGBoost': xgb.XGBClassifier(use_label_encoder=False, eval_metric='logloss'),
+            # 'LightGBM': lgb.LGBMClassifier(),
+            # 'CatBoost': CatBoostClassifier(verbose=0),
         }
 
         search_spaces = {
@@ -67,40 +67,40 @@ class Models:
                 'min_samples_leaf':  range(1, 21),
                 'bootstrap': [True, False],
             },
-            'ExtraTrees': {
-                'n_estimators': [100],
-                'criterion': ["gini", "entropy"],
-                'max_features': np.arange(0.05, 1.01, 0.05),
-                'min_samples_split': range(2, 21),
-                'min_samples_leaf': range(1, 21),
-                'bootstrap': [True, False],
-            },
-            'AdaBoost': {
-                'n_estimators': [50, 100, 200],
-                'learning_rate': [0.01, 0.1, 1, 10]
-            },
-            'HistGradientBoosting': {
-                'learning_rate': [0.01, 0.1, 0.2],
-                'max_iter': [100, 200, 300]
-            },
-            'XGBoost': {
-                'n_estimators': [100],
-                'max_depth': range(1, 11),
-                'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
-                'subsample': np.arange(0.05, 1.01, 0.05),
-                'min_child_weight': range(1, 21),
-                'verbosity': [0],
-            },
-            'LightGBM': {
-                'n_estimators': [100, 200, 300],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'num_leaves': [31, 62, 127]
-            },
-            'CatBoost': {
-                'iterations': [100, 200, 300],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'depth': [3, 6, 9]
-            }
+            # 'ExtraTrees': {
+            #     'n_estimators': [100],
+            #     'criterion': ["gini", "entropy"],
+            #     'max_features': np.arange(0.05, 1.01, 0.05),
+            #     'min_samples_split': range(2, 21),
+            #     'min_samples_leaf': range(1, 21),
+            #     'bootstrap': [True, False],
+            # },
+            # 'AdaBoost': {
+            #     'n_estimators': [50, 100, 200],
+            #     'learning_rate': [0.01, 0.1, 1, 10]
+            # },
+            # 'HistGradientBoosting': {
+            #     'learning_rate': [0.01, 0.1, 0.2],
+            #     'max_iter': [100, 200, 300]
+            # },
+            # 'XGBoost': {
+            #     'n_estimators': [100],
+            #     'max_depth': range(1, 11),
+            #     'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
+            #     'subsample': np.arange(0.05, 1.01, 0.05),
+            #     'min_child_weight': range(1, 21),
+            #     'verbosity': [0],
+            # },
+            # 'LightGBM': {
+            #     'n_estimators': [100, 200, 300],
+            #     'learning_rate': [0.01, 0.1, 0.2],
+            #     'num_leaves': [31, 62, 127]
+            # },
+            # 'CatBoost': {
+            #     'iterations': [100, 200, 300],
+            #     'learning_rate': [0.01, 0.1, 0.2],
+            #     'depth': [3, 6, 9]
+            # },
         }
 
         best_models = []
