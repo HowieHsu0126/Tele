@@ -14,7 +14,6 @@ def main(project_name='baseline'):
         'train_res': '/sda/xuhaowei/Research/Tele/Input/raw/train.csv',
         'train_ans': '/sda/xuhaowei/Research/Tele/Input/raw/labels.csv',
         'validation_res': '/sda/xuhaowei/Research/Tele/Input/raw/val.csv',
-        'output_path': f'/sda/xuhaowei/Research/Tele/Output/submissions/prediction_{datetime.datetime.now()}.csv'
     }
 
     # 日期字段和字符串字段列表
@@ -24,6 +23,8 @@ def main(project_name='baseline'):
                   'phone1_loc_city', 'phone1_loc_province',
                   'phone2_loc_city', 'phone2_loc_province']
 
+    output_path = f'/sda/xuhaowei/Research/Tele/Output/submissions/prediction_{datetime.datetime.now()}.csv'
+    
     # 运行数据处理流水线
     data_controller = Datasets()
     X, y, X_val, validation_res = data_controller.run_pipeline(
