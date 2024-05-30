@@ -13,9 +13,7 @@ from sklearn.experimental import enable_halving_search_cv  # noqa
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import (HalvingGridSearchCV, cross_val_score,
                                      train_test_split)
-from sklearn.svm import SVC
 
-# TODO: PCA
 
 class Models:
     @staticmethod

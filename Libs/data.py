@@ -7,6 +7,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import (LabelEncoder, OneHotEncoder, OrdinalEncoder,
                                    StandardScaler)
+from sklearn.decomposition import PCA
 from utils import Utils
 
 
@@ -83,7 +84,7 @@ class Datasets:
         df['call_fee_rate'] = df['cfee'] / (df['call_duration'] + 1)
         df['long_call_rate'] = df['lfee'] / (df['call_duration'] + 1)
         df['total_fee'] = df['cfee'] + df['lfee']
-        
+
         # 疑似类型标志
         suspect_types = {3, 5, 6, 9, 11, 12, 17}
         df['is_suspect'] = df['phone1_type'].apply(
@@ -91,34 +92,48 @@ class Datasets:
 
         # 通话次数和唯一通话者数
         df['call_count'] = df.groupby('msisdn')['msisdn'].transform('count')
-        df['unique_callers'] = df.groupby('msisdn')['other_party'].transform('nunique')
+        df['unique_callers'] = df.groupby(
+            'msisdn')['other_party'].transform('nunique')
 
         # 各类通话费用总和
         df['total_cfee'] = df.groupby('msisdn')['cfee'].transform('sum')
         df['total_lfee'] = df.groupby('msisdn')['lfee'].transform('sum')
 
         # 平均通话时长
-        df['avg_call_duration'] = df.groupby('msisdn')['call_duration'].transform('mean')
+        df['avg_call_duration'] = df.groupby(
+            'msisdn')['call_duration'].transform('mean')
 
         # 将类别变量进行数值编码再计算比例特征
-        df['call_event_encoded'] = df['call_event'].apply(lambda x: 1 if x == 'call_src' else 0)
-        df['call_event_ratio'] = df.groupby('msisdn')['call_event_encoded'].transform('mean')
+        df['call_event_encoded'] = df['call_event'].apply(
+            lambda x: 1 if x == 'call_src' else 0)
+        df['call_event_ratio'] = df.groupby(
+            'msisdn')['call_event_encoded'].transform('mean')
 
-        df['video_call_ratio'] = df.groupby('msisdn')['ismultimedia'].transform('mean')
+        df['video_call_ratio'] = df.groupby(
+            'msisdn')['ismultimedia'].transform('mean')
 
         df['roam_type_encoded'] = df['roam_type'].astype('category').cat.codes
-        df['roam_type_ratio'] = df.groupby('msisdn')['roam_type_encoded'].transform('mean')
+        df['roam_type_ratio'] = df.groupby(
+            'msisdn')['roam_type_encoded'].transform('mean')
 
-        df['a_serv_type_encoded'] = df['a_serv_type'].apply(lambda x: 1 if x == '01' else 0)
-        df['caller_ratio'] = df.groupby('msisdn')['a_serv_type_encoded'].transform('mean')
+        df['a_serv_type_encoded'] = df['a_serv_type'].apply(
+            lambda x: 1 if x == '01' else 0)
+        df['caller_ratio'] = df.groupby(
+            'msisdn')['a_serv_type_encoded'].transform('mean')
 
         # 地域特征
-        df['is_same_home_area'] = (df['home_area_code'] == df['called_home_code']).astype(int)
-        df['is_same_visit_area'] = (df['visit_area_code'] == df['called_code']).astype(int)
-        df['home_area_call_count'] = df.groupby('home_area_code')['msisdn'].transform('count')
-        df['visit_area_call_count'] = df.groupby('visit_area_code')['msisdn'].transform('count')
-        df['called_home_area_call_count'] = df.groupby('called_home_code')['msisdn'].transform('count')
-        df['called_visit_area_call_count'] = df.groupby('called_code')['msisdn'].transform('count')
+        df['is_same_home_area'] = (
+            df['home_area_code'] == df['called_home_code']).astype(int)
+        df['is_same_visit_area'] = (
+            df['visit_area_code'] == df['called_code']).astype(int)
+        df['home_area_call_count'] = df.groupby(
+            'home_area_code')['msisdn'].transform('count')
+        df['visit_area_call_count'] = df.groupby('visit_area_code')[
+            'msisdn'].transform('count')
+        df['called_home_area_call_count'] = df.groupby(
+            'called_home_code')['msisdn'].transform('count')
+        df['called_visit_area_call_count'] = df.groupby(
+            'called_code')['msisdn'].transform('count')
 
         return df
 
@@ -212,7 +227,7 @@ class Datasets:
         return X_resampled, y_resampled
 
     @staticmethod
-    def feature_selection(X, y, logger, n=20):
+    def feature_selection(X, y, logger, n=500):
         logger.info("Starting feature selection...")
         embed = RandomForestClassifier(n_estimators=100, random_state=42)
         embed.fit(X, y)
@@ -230,6 +245,14 @@ class Datasets:
         X_selected = X[selected_features]
         logger.info("Feature selection completed successfully.")
         return X_selected, selected_features
+
+    @staticmethod
+    def apply_pca(X, logger, n_components=100):
+        logger.info("Applying PCA for dimensionality reduction...")
+        pca = PCA(n_components=n_components)
+        X_pca = pca.fit_transform(X)
+        logger.info("PCA applied successfully.")
+        return X_pca
 
     @staticmethod
     def adversarial_validation(X, X_val, logger):
@@ -272,8 +295,15 @@ class Datasets:
         # self.adversarial_validation(X, X_val, logger)
         # 处理类不平衡
         X_resampled, y_resampled = self.handle_imbalance(X, y, logger)
-        
+
         # 特征选择
-        X_resampled_selected, selected_features = self.feature_selection(X_resampled, y_resampled, logger, n=1000)
+        X_resampled_selected, selected_features = self.feature_selection(
+            X_resampled, y_resampled, logger, n=1000)
         X_val_selected = X_val[selected_features]
-        return X_resampled_selected, y_resampled, X_val_selected, validation_res
+
+        # Apply PCA after feature selection
+        X_resampled_pca = self.apply_pca(
+            X_resampled_selected, n_components=500)
+        X_val_pca = self.apply_pca(X_val_selected, n_components=500)
+
+        return X_resampled_pca, y_resampled, X_val_pca, validation_res

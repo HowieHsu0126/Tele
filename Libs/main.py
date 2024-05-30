@@ -24,7 +24,7 @@ def main(project_name='baseline'):
                   'phone2_loc_city', 'phone2_loc_province']
 
     output_path = f'/sda/xuhaowei/Research/Tele/Output/submissions/prediction_{datetime.datetime.now()}.csv'
-    
+
     # 运行数据处理流水线
     data_controller = Datasets()
     X, y, X_val, validation_res = data_controller.run_pipeline(
