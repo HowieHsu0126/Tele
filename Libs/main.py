@@ -32,7 +32,7 @@ def main(project_name='baseline'):
 
     model_controller = Models()
     model_controller.run_pipeline(
-        X, y, X_val, validation_res, file_paths['output_path'], logger, tune_hyperparameters=False, adversarial_training=False)
+        X, y, X_val, validation_res, output_path, logger, tune_hyperparameters=False, adversarial_training=False)
 
     # model = AutoML.run_automl(X_resampled_selected, y_resampled, logger)
     # AutoML.predict_and_save(model, X_val, validation_res, selector,
