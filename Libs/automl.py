@@ -21,8 +21,7 @@ class AutoML:
     def run_automl(X, y, logger):
         logger.info("Running AutoML...")
         pipeline_optimizer = TPOTClassifier(generations=5, population_size=50,
-                                            verbosity=2, random_state=42, scoring='f1',
-                                            n_jobs=-1)
+                                            verbosity=2, random_state=42, scoring='f1',)
 
         pipeline_optimizer.fit(X, y)
         pipeline_optimizer.export('auto_pipeline.py')

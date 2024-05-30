@@ -39,4 +39,4 @@ def main(project_name='baseline'):
 
 
 if __name__ == "__main__":
-    main('baseline')
+    main('automl')
