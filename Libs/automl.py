@@ -5,7 +5,7 @@ class AutoML:
     @staticmethod
     def predict_and_save(model, X_val, validation_res, selected_features, output_path, logger):
         logger.info("Predicting and saving results...")
-        
+
         X_val_selected = X_val[selected_features]
         val_pred = model.predict(X_val_selected)
 
@@ -16,12 +16,13 @@ class AutoML:
 
         final_predictions.to_csv(output_path, index=False)
         logger.info("Results saved successfully.")
-        
+
     @staticmethod
     def run_automl(X, y, logger):
         logger.info("Running AutoML...")
         pipeline_optimizer = TPOTClassifier(generations=5, population_size=50,
-                                            verbosity=2, random_state=42, scoring='f1')
+                                            verbosity=2, random_state=42, scoring='f1',
+                                            n_jobs=-1)
 
         pipeline_optimizer.fit(X, y)
         pipeline_optimizer.export('auto_pipeline.py')

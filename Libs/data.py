@@ -1,10 +1,13 @@
 import category_encoders as ce
+import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder, StandardScaler
-from utils import Utils
+from imblearn.over_sampling import SMOTE
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import (LabelEncoder, OneHotEncoder, OrdinalEncoder,
+                                   StandardScaler)
+from utils import Utils
 
 
 class Datasets:
@@ -161,6 +164,34 @@ class Datasets:
         return X, y, X_val
 
     @staticmethod
+    def handle_imbalance(X, y, logger):
+        logger.info("Handling class imbalance using SMOTE...")
+        smote = SMOTE(random_state=42)
+        X_resampled, y_resampled = smote.fit_resample(X, y)
+        logger.info("Class imbalance handled successfully.")
+        return X_resampled, y_resampled
+
+    @staticmethod
+    def feature_selection(X, y, logger, n=20):
+        logger.info("Starting feature selection...")
+        embed = RandomForestClassifier(n_estimators=100, random_state=42)
+        embed.fit(X, y)
+
+        # 结合各个方法的特征重要性
+        logger.info("Combining feature importances from all methods...")
+        feature_scores = embed.feature_importances_
+
+        # 选择最重要的特征
+        logger.info("Selecting top features...")
+        indices = np.argsort(feature_scores)[-n:]  # 选择排名前n的特征
+        selected_features = X.columns[indices]
+
+        # 使用选中的特征重新构建数据集
+        X_selected = X[selected_features]
+        logger.info("Feature selection completed successfully.")
+        return X_selected, selected_features
+
+    @staticmethod
     def adversarial_validation(X, X_val, logger):
         logger.info("Starting adversarial validation...")
         X['is_train'] = 1
@@ -199,4 +230,10 @@ class Datasets:
         train_data, validation_res = data_frames['train_data'], data_frames['validation_res']
         X, y, X_val = self.prepare_datasets(train_data, validation_res)
         # self.adversarial_validation(X, X_val, logger)
-        return X, y, X_val, validation_res
+         # 处理类不平衡
+        X_resampled, y_resampled = self.handle_imbalance(X, y, logger)
+        
+        # 特征选择
+        X_resampled_selected, selected_features = self.feature_selection(X_resampled, y_resampled, logger)
+        X_val_selected = X_val[selected_features]
+        return X_resampled_selected, y_resampled, X_val_selected, validation_res
