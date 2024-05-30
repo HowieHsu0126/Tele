@@ -3,10 +3,11 @@ import datetime
 from data import Datasets
 from model import Models
 from utils import Logger
+from automl import AutoML
 
 
-def main():
-    logger = Logger.setup_logger()
+def main(project_name='baseline'):
+    logger = Logger.setup_logger(project_name)
 
     # 数据加载
     train_res, train_ans, validation_res = Datasets.load_data(logger)
@@ -42,6 +43,7 @@ def main():
         X_resampled_selected, y_resampled, logger)
     model = Models.train_model(
         X_resampled_selected, y_resampled, best_models, logger)
+    # model = AutoML.run_automl(X_resampled_selected, y_resampled, logger)
 
     # 预测并保存结果
     X_val = validation_res.drop(columns=[
@@ -51,4 +53,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main('automl')
