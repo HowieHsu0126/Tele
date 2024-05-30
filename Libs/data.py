@@ -73,16 +73,53 @@ class Datasets:
             lambda x: 1 if 9 <= x <= 18 else 0)
         df['call_duration'] = (
             df['end_time'] - df['start_time']).dt.total_seconds()
+        df['call_start_hour'] = df['start_time'].dt.hour
+        df['call_end_hour'] = df['end_time'].dt.hour
         return df
 
     @staticmethod
     def construct_new_features(df):
+        # 通话费用率和长途费用率
         df['call_fee_rate'] = df['cfee'] / (df['call_duration'] + 1)
         df['long_call_rate'] = df['lfee'] / (df['call_duration'] + 1)
         df['total_fee'] = df['cfee'] + df['lfee']
+        
+        # 疑似类型标志
         suspect_types = {3, 5, 6, 9, 11, 12, 17}
         df['is_suspect'] = df['phone1_type'].apply(
             lambda x: 1 if x in suspect_types else 0)
+
+        # 通话次数和唯一通话者数
+        df['call_count'] = df.groupby('msisdn')['msisdn'].transform('count')
+        df['unique_callers'] = df.groupby('msisdn')['other_party'].transform('nunique')
+
+        # 各类通话费用总和
+        df['total_cfee'] = df.groupby('msisdn')['cfee'].transform('sum')
+        df['total_lfee'] = df.groupby('msisdn')['lfee'].transform('sum')
+
+        # 平均通话时长
+        df['avg_call_duration'] = df.groupby('msisdn')['call_duration'].transform('mean')
+
+        # 将类别变量进行数值编码再计算比例特征
+        df['call_event_encoded'] = df['call_event'].apply(lambda x: 1 if x == 'call_src' else 0)
+        df['call_event_ratio'] = df.groupby('msisdn')['call_event_encoded'].transform('mean')
+
+        df['video_call_ratio'] = df.groupby('msisdn')['ismultimedia'].transform('mean')
+
+        df['roam_type_encoded'] = df['roam_type'].astype('category').cat.codes
+        df['roam_type_ratio'] = df.groupby('msisdn')['roam_type_encoded'].transform('mean')
+
+        df['a_serv_type_encoded'] = df['a_serv_type'].apply(lambda x: 1 if x == '01' else 0)
+        df['caller_ratio'] = df.groupby('msisdn')['a_serv_type_encoded'].transform('mean')
+
+        # 地域特征
+        df['is_same_home_area'] = (df['home_area_code'] == df['called_home_code']).astype(int)
+        df['is_same_visit_area'] = (df['visit_area_code'] == df['called_code']).astype(int)
+        df['home_area_call_count'] = df.groupby('home_area_code')['msisdn'].transform('count')
+        df['visit_area_call_count'] = df.groupby('visit_area_code')['msisdn'].transform('count')
+        df['called_home_area_call_count'] = df.groupby('called_home_code')['msisdn'].transform('count')
+        df['called_visit_area_call_count'] = df.groupby('called_code')['msisdn'].transform('count')
+
         return df
 
     @staticmethod
@@ -148,8 +185,11 @@ class Datasets:
 
     @staticmethod
     def normalize_features(df):
-        numerical_features = ['call_duration', 'cfee', 'lfee',
-                              'hour', 'dayofweek', 'call_duration_minutes']
+        numerical_features = ['call_duration', 'cfee', 'lfee', 'start_hour', 'start_dayofweek', 'call_duration_minutes',
+                              'call_fee_rate', 'long_call_rate', 'total_fee', 'call_count', 'unique_callers',
+                              'total_cfee', 'total_lfee', 'avg_call_duration', 'call_event_ratio',
+                              'video_call_ratio', 'roam_type_ratio', 'caller_ratio', 'home_area_call_count',
+                              'visit_area_call_count', 'called_home_area_call_count', 'called_visit_area_call_count']
         scaler = StandardScaler()
         df[numerical_features] = scaler.fit_transform(df[numerical_features])
         return df
@@ -230,10 +270,10 @@ class Datasets:
         train_data, validation_res = data_frames['train_data'], data_frames['validation_res']
         X, y, X_val = self.prepare_datasets(train_data, validation_res)
         # self.adversarial_validation(X, X_val, logger)
-         # 处理类不平衡
+        # 处理类不平衡
         X_resampled, y_resampled = self.handle_imbalance(X, y, logger)
         
         # 特征选择
-        X_resampled_selected, selected_features = self.feature_selection(X_resampled, y_resampled, logger)
+        X_resampled_selected, selected_features = self.feature_selection(X_resampled, y_resampled, logger, n=1000)
         X_val_selected = X_val[selected_features]
         return X_resampled_selected, y_resampled, X_val_selected, validation_res

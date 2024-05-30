@@ -30,13 +30,13 @@ def main(project_name='baseline'):
     X, y, X_val, validation_res = data_controller.run_pipeline(
         file_paths, date_fields, str_fields, logger)
 
-    # model_controller = Models()
-    # model_controller.run_pipeline(
-    #     X, y, X_val, validation_res, output_path, logger, tune_hyperparameters=False, adversarial_training=False)
+    model_controller = Models()
+    model_controller.run_pipeline(
+        X, y, X_val, validation_res, output_path, logger, tune_hyperparameters=False, adversarial_training=False)
 
-    model = AutoML.run_automl(X, y, logger)
-    AutoML.predict_and_save(model, X_val, validation_res, output_path, logger)
+    # model = AutoML.run_automl(X, y, logger)
+    # AutoML.predict_and_save(model, X_val, validation_res, output_path, logger)
 
 
 if __name__ == "__main__":
-    main('automl')
+    main('manual-new_feat')
