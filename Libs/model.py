@@ -49,7 +49,7 @@ class Models:
         models = {
             'RandomForest': RandomForestClassifier(),
             'ExtraTrees': ExtraTreesClassifier(),
-            'GradientBoosting': GradientBoostingClassifier(),
+            # 'GradientBoosting': GradientBoostingClassifier(),
             'AdaBoost': AdaBoostClassifier(),
             'HistGradientBoosting': HistGradientBoostingClassifier(),
             'XGBoost': xgb.XGBClassifier(use_label_encoder=False, eval_metric='logloss'),
@@ -74,15 +74,15 @@ class Models:
                 'min_samples_leaf': range(1, 21),
                 'bootstrap': [True, False],
             },
-            'GradientBoosting': {
-                'n_estimators': [100],
-                'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
-                'max_depth': range(1, 11),
-                'min_samples_split': range(2, 21),
-                'min_samples_leaf': range(1, 21),
-                'subsample': np.arange(0.05, 1.01, 0.05),
-                'max_features': np.arange(0.05, 1.01, 0.05),
-            },
+            # 'GradientBoosting': {
+            #     'n_estimators': [100],
+            #     'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
+            #     'max_depth': range(1, 11),
+            #     'min_samples_split': range(2, 21),
+            #     'min_samples_leaf': range(1, 21),
+            #     'subsample': np.arange(0.05, 1.01, 0.05),
+            #     'max_features': np.arange(0.05, 1.01, 0.05),
+            # },
             'AdaBoost': {
                 'n_estimators': [50, 100, 200],
                 'learning_rate': [0.01, 0.1, 1, 10]
@@ -97,7 +97,6 @@ class Models:
                 'learning_rate': [1e-3, 1e-2, 1e-1, 0.5, 1.],
                 'subsample': np.arange(0.05, 1.01, 0.05),
                 'min_child_weight': range(1, 21),
-                'n_jobs': [1],
                 'verbosity': [0],
             },
             'LightGBM': {
@@ -147,6 +146,7 @@ class Models:
     @staticmethod
     def predict_and_save(model, X_val, validation_res, selected_features, output_path, logger):
         logger.info("Predicting and saving results...")
+        
         X_val_selected = X_val[selected_features]
         val_pred = model.predict(X_val_selected)
 

@@ -1,35 +1,32 @@
 import datetime
 
+from automl import AutoML
 from data import Datasets
 from model import Models
 from utils import Logger
-from automl import AutoML
 
 
 def main(project_name='baseline'):
     logger = Logger.setup_logger(project_name)
 
-    # 数据加载
-    train_res, train_ans, validation_res = Datasets.load_data(logger)
+    # 数据文件路径
+    file_paths = {
+        'train_res': '/sda/xuhaowei/Research/Tele/Input/raw/train.csv',
+        'train_ans': '/sda/xuhaowei/Research/Tele/Input/raw/labels.csv',
+        'validation_res': '/sda/xuhaowei/Research/Tele/Input/raw/val.csv'
+    }
 
-    # 数据合并
-    train_data = Datasets.merge_data(train_res, train_ans, logger)
+    # 日期字段和字符串字段列表
+    date_fields = ['start_time', 'end_time',
+                   'open_datetime', 'update_time', 'date', 'date_c']
+    str_fields = ['visit_area_code', 'called_code', 'called_home_code',
+                  'phone1_loc_city', 'phone1_loc_province',
+                  'phone2_loc_city', 'phone2_loc_province']
 
-    # 数据预处理
-    train_data, validation_res = Datasets.preprocess_data(
-        train_data, validation_res, logger)
-
-    # 特征工程
-    categorical_features = ['call_event', 'ismultimedia', 'home_area_code', 'visit_area_code', 'called_home_code',
-                            'called_code', 'a_serv_type', 'long_type1', 'roam_type', 'a_product_id', 'phone1_type',
-                            'phone2_type', 'phone1_loc_city', 'phone1_loc_province', 'phone2_loc_city', 'phone2_loc_province']
-    train_data, validation_res = Datasets.feature_engineering(
-        train_data, validation_res, categorical_features, logger)
-
-    # 准备特征和标签
-    X = train_data.drop(columns=['msisdn', 'is_sa', 'start_time',
-                        'end_time', 'open_datetime', 'update_time', 'date', 'date_c'])
-    y = train_data['is_sa']
+    # 运行数据处理流水线
+    dataset = Datasets()
+    X, y, X_val, validation_res = dataset.run_pipeline(
+        file_paths, date_fields, str_fields, logger)
 
     # 处理样本不平衡
     X_resampled, y_resampled = Models.handle_imbalance(X, y, logger)
@@ -46,11 +43,11 @@ def main(project_name='baseline'):
     # model = AutoML.run_automl(X_resampled_selected, y_resampled, logger)
 
     # 预测并保存结果
-    X_val = validation_res.drop(columns=[
-                                'msisdn', 'is_sa', 'start_time', 'end_time', 'open_datetime', 'update_time', 'date', 'date_c'])
     Models.predict_and_save(model, X_val, validation_res, selector,
                             f'/sda/xuhaowei/Research/Tele/Output/submissions/prediction_{datetime.datetime.now()}.csv', logger)
+    # AutoML.predict_and_save(model, X_val, validation_res, selector,
+    #                         f'/sda/xuhaowei/Research/Tele/Output/submissions/prediction_{datetime.datetime.now()}.csv', logger)
 
 
 if __name__ == "__main__":
-    main('automl')
+    main('baseline')

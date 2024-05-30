@@ -1,98 +1,202 @@
+import category_encoders as ce
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder, OrdinalEncoder, StandardScaler
 from utils import Utils
-
-import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score
 
 
 class Datasets:
-    @staticmethod
-    def load_data(logger):
-        logger.info("Loading data...")
-        train_res = pd.read_csv(
-            '/sda/xuhaowei/Research/Tele/Input/raw/train.csv', low_memory=False)
-        train_ans = pd.read_csv(
-            '/sda/xuhaowei/Research/Tele/Input/raw/labels.csv')
-        validation_res = pd.read_csv(
-            '/sda/xuhaowei/Research/Tele/Input/raw/val.csv', low_memory=False)
-        logger.info("Data loaded successfully.")
-        return train_res, train_ans, validation_res
 
     @staticmethod
-    def merge_data(train_res, train_ans, logger):
-        logger.info("Merging training data and labels...")
-        train_data = pd.merge(train_res, train_ans, on='msisdn')
-        logger.info("Data merged successfully.")
-        return train_data
+    def load_and_clean_data(file_paths, logger):
+        logger.info("Loading and cleaning data...")
+        data_frames = {}
+        for name, path in file_paths.items():
+            df = pd.read_csv(path, low_memory=False)
+            df = Utils.reduce_mem_usage(df, logger)
+            data_frames[name] = df
+        logger.info("Data loaded and cleaned successfully.")
+        return data_frames
 
     @staticmethod
-    def preprocess_data(train_data, validation_res, logger):
+    def merge_data(train_res, train_ans, key='msisdn'):
+        return pd.merge(train_res, train_ans, on=key)
+
+    @staticmethod
+    def preprocess_data(data_frames, date_fields, str_fields, logger):
         logger.info("Preprocessing data...")
-        Utils.convert_to_datetime(
-            train_data, ['start_time', 'end_time', 'open_datetime'])
-        Utils.convert_to_datetime(
-            validation_res, ['start_time', 'end_time', 'open_datetime'])
-        train_data['update_time'] = pd.to_datetime(
-            train_data['update_time'], errors='coerce')
-        train_data['date'] = pd.to_datetime(
-            train_data['date'], errors='coerce')
-        train_data['date_c'] = pd.to_datetime(
-            train_data['date_c'], format='%Y%m%d', errors='coerce')
-        Utils.create_time_features(train_data)
-        Utils.create_time_features(validation_res)
-        fields_to_convert = ['visit_area_code', 'called_code', 'phone1_loc_city',
-                             'phone1_loc_province', 'phone2_loc_city', 'phone2_loc_province']
-        for field in fields_to_convert:
-            train_data[field] = train_data[field].astype(str)
-            validation_res[field] = validation_res[field].astype(str)
+
+        for name, df in data_frames.items():
+            Utils.convert_to_datetime(df, date_fields)
+            df[str_fields] = df[str_fields].astype(str)
+            df = Utils.create_time_features(df)
+
         logger.info("Data preprocessed successfully.")
-        return train_data, validation_res
+        return data_frames
 
     @staticmethod
-    def feature_engineering(train_data, validation_res, categorical_features, logger):
+    def feature_engineering(data_frames, logger):
         logger.info("Performing feature engineering...")
-        # 时间特征提取
-        logger.info("Extracting time features...")
-        train_data['start_hour'] = train_data['start_time'].dt.hour
-        train_data['start_dayofweek'] = train_data['start_time'].dt.dayofweek
-        train_data['is_weekend'] = train_data['start_dayofweek'].apply(
-            lambda x: 1 if x >= 5 else 0)
-        train_data['is_working_hour'] = train_data['start_hour'].apply(
-            lambda x: 1 if 9 <= x <= 18 else 0)
 
-        validation_res['start_hour'] = validation_res['start_time'].dt.hour
-        validation_res['start_dayofweek'] = validation_res['start_time'].dt.dayofweek
-        validation_res['is_weekend'] = validation_res['start_dayofweek'].apply(
-            lambda x: 1 if x >= 5 else 0)
-        validation_res['is_working_hour'] = validation_res['start_hour'].apply(
-            lambda x: 1 if 9 <= x <= 18 else 0)
+        for name, df in data_frames.items():
+            df = Datasets.extract_time_features(df)
+            df = Datasets.construct_new_features(df)
 
-        train_data = pd.get_dummies(train_data, columns=categorical_features)
-        validation_res = pd.get_dummies(
-            validation_res, columns=categorical_features)
+        train_data = data_frames['train_data']
+        validation_res = data_frames['validation_res']
 
-        # 构建新特征
-        logger.info("Constructing new features...")
-        train_data['call_fee_rate'] = train_data['cfee'] / \
-            (train_data['call_duration'] + 1)
-        validation_res['call_fee_rate'] = validation_res['cfee'] / \
-            (validation_res['call_duration'] + 1)
+        train_data, validation_res = Datasets.encode_features(
+            train_data, validation_res)
 
-        train_data['long_call_rate'] = train_data['lfee'] / \
-            (train_data['call_duration'] + 1)
-        validation_res['long_call_rate'] = validation_res['lfee'] / \
-            (validation_res['call_duration'] + 1)
+        data_frames['train_data'] = train_data
+        data_frames['validation_res'] = validation_res
 
-        train_data['total_fee'] = train_data['cfee'] + train_data['lfee']
-        validation_res['total_fee'] = validation_res['cfee'] + \
-            validation_res['lfee']
-
-        # 确保训练集和验证集具有相同的列
-        logger.info(
-            "Aligning validation data columns with training data columns...")
-        validation_res = validation_res.reindex(
-            columns=train_data.columns, fill_value=0)
+        for name, df in data_frames.items():
+            df = Datasets.normalize_features(df)
+            data_frames[name] = df
 
         logger.info("Feature engineering completed successfully.")
+        return data_frames
+
+    @staticmethod
+    def extract_time_features(df):
+        df['start_hour'] = df['start_time'].dt.hour
+        df['start_dayofweek'] = df['start_time'].dt.dayofweek
+        df['is_weekend'] = df['start_dayofweek'].apply(
+            lambda x: 1 if x >= 5 else 0)
+        df['is_working_hour'] = df['start_hour'].apply(
+            lambda x: 1 if 9 <= x <= 18 else 0)
+        df['call_duration'] = (
+            df['end_time'] - df['start_time']).dt.total_seconds()
+        return df
+
+    @staticmethod
+    def construct_new_features(df):
+        df['call_fee_rate'] = df['cfee'] / (df['call_duration'] + 1)
+        df['long_call_rate'] = df['lfee'] / (df['call_duration'] + 1)
+        df['total_fee'] = df['cfee'] + df['lfee']
+        suspect_types = {3, 5, 6, 9, 11, 12, 17}
+        df['is_suspect'] = df['phone1_type'].apply(
+            lambda x: 1 if x in suspect_types else 0)
+        return df
+
+    @staticmethod
+    def encode_features(train_data, validation_res):
+        # Label Encoding
+        label_features = ['call_event', 'a_serv_type']
+        for feature in label_features:
+            le = LabelEncoder()
+            train_data[feature] = le.fit_transform(train_data[feature])
+            validation_res[feature] = le.transform(validation_res[feature])
+
+        # Ordinal Encoding
+        ordinal_features = ['roam_type']
+        for feature in ordinal_features:
+            oe = OrdinalEncoder()
+            train_data[feature] = oe.fit_transform(train_data[[feature]])
+            validation_res[feature] = oe.transform(validation_res[[feature]])
+
+        # OneHot Encoding
+        onehot_features = ['ismultimedia', 'home_area_code', 'visit_area_code',
+                           'called_home_code', 'called_code', 'long_type1', 'phone1_type', 'phone2_type']
+        onehot_encoder = OneHotEncoder(
+            sparse_output=False, handle_unknown='ignore')
+        onehot_encoded_train = onehot_encoder.fit_transform(
+            train_data[onehot_features])
+        onehot_encoded_val = onehot_encoder.transform(
+            validation_res[onehot_features])
+        onehot_encoded_columns = onehot_encoder.get_feature_names_out(
+            onehot_features)
+
+        onehot_encoded_train_df = pd.DataFrame(
+            onehot_encoded_train, columns=onehot_encoded_columns)
+        onehot_encoded_val_df = pd.DataFrame(
+            onehot_encoded_val, columns=onehot_encoded_columns)
+
+        train_data = pd.concat([train_data.reset_index(
+            drop=True), onehot_encoded_train_df.reset_index(drop=True)], axis=1)
+        validation_res = pd.concat([validation_res.reset_index(
+            drop=True), onehot_encoded_val_df.reset_index(drop=True)], axis=1)
+
+        train_data.drop(columns=onehot_features, inplace=True)
+        validation_res.drop(columns=onehot_features, inplace=True)
+
+        # Frequency Encoding
+        freq_features = ['a_product_id']
+        for feature in freq_features:
+            freq_encoding = train_data[feature].value_counts().to_dict()
+            train_data[feature +
+                       '_freq'] = train_data[feature].map(freq_encoding)
+            validation_res[feature +
+                           '_freq'] = validation_res[feature].map(freq_encoding)
+
+        # Target Encoding
+        target_features = ['phone1_loc_city', 'phone2_loc_city',
+                           'phone1_loc_province', 'phone2_loc_province']
+        target_encoder = ce.TargetEncoder(cols=target_features)
+        train_data[target_features] = target_encoder.fit_transform(
+            train_data[target_features], train_data['is_sa'])
+        validation_res[target_features] = target_encoder.transform(
+            validation_res[target_features])
 
         return train_data, validation_res
+
+    @staticmethod
+    def normalize_features(df):
+        numerical_features = ['call_duration', 'cfee', 'lfee',
+                              'hour', 'dayofweek', 'call_duration_minutes']
+        scaler = StandardScaler()
+        df[numerical_features] = scaler.fit_transform(df[numerical_features])
+        return df
+
+    @staticmethod
+    def prepare_datasets(train_data, validation_res):
+        X = train_data.drop(columns=['msisdn', 'is_sa', 'start_time', 'end_time', 'open_datetime',
+                                     'update_time', 'date', 'date_c'])
+        y = train_data['is_sa']
+        X_val = validation_res.drop(columns=['msisdn', 'start_time', 'end_time', 'open_datetime',
+                                             'update_time', 'date', 'date_c'])
+        return X, y, X_val
+
+    @staticmethod
+    def adversarial_validation(X, X_val, logger):
+        logger.info("Starting adversarial validation...")
+        X['is_train'] = 1
+        X_val['is_train'] = 0
+        combined_data = pd.concat([X, X_val], axis=0)
+        y = combined_data['is_train']
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            combined_data, y, test_size=0.3, random_state=42)
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict_proba(X_test)[:, 1]
+        auc = roc_auc_score(y_test, y_pred)
+
+        logger.info(f'Adversarial validation AUC: {auc}')
+
+        X.drop(columns=['is_train'], inplace=True)
+        X_val.drop(columns=['is_train'], inplace=True)
+
+        if auc > 0.7:
+            logger.warning(
+                "Adversarial validation AUC is high. Training and validation sets have different distributions.")
+        else:
+            logger.info(
+                "Adversarial validation AUC is low. Training and validation sets have similar distributions.")
+
+    def run_pipeline(self, file_paths, date_fields, str_fields, logger):
+        data_frames = self.load_and_clean_data(file_paths, logger)
+        train_res, train_ans, validation_res = data_frames[
+            'train_res'], data_frames['train_ans'], data_frames['validation_res']
+        train_data = self.merge_data(train_res, train_ans)
+        data_frames = self.preprocess_data(
+            {'train_data': train_data, 'validation_res': validation_res}, date_fields, str_fields, logger)
+        data_frames = self.feature_engineering(data_frames, logger)
+        train_data, validation_res = data_frames['train_data'], data_frames['validation_res']
+        X, y, X_val = self.prepare_datasets(train_data, validation_res)
+        self.adversarial_validation(X, X_val, logger)
+        return X, y, X_val, validation_res
