@@ -25,14 +25,18 @@ def main(project_name='baseline'):
 
     output_path = f'/sda/xuhaowei/Research/Tele/Output/submissions/prediction_{datetime.datetime.now()}.csv'
 
-    # 运行数据处理流水线
+    # 数据
     data_controller = Datasets()
     X, y, X_val, validation_res = data_controller.run_pipeline(
-        file_paths, date_fields, str_fields, logger)
-
+        file_paths, date_fields, str_fields, logger, n_features=1000)
+    # 模型
     model_controller = Models()
     model_controller.run_pipeline(
-        X, y, X_val, validation_res, output_path, logger, tune_hyperparameters=False, adversarial_training=False)
+        X, y, X_val, validation_res, output_path, logger,
+        tune_hyperparameters=False,
+        adversarial_val=True,
+        use_pseudo_labeling=False,
+    )
 
     # model = AutoML.run_automl(X, y, logger)
     # AutoML.predict_and_save(model, X_val, validation_res, output_path, logger)

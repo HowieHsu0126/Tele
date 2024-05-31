@@ -2,12 +2,14 @@ import category_encoders as ce
 import numpy as np
 import pandas as pd
 from imblearn.over_sampling import SMOTE
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_selection import RFE, mutual_info_classif
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import (LabelEncoder, OneHotEncoder, OrdinalEncoder,
                                    StandardScaler)
-from sklearn.decomposition import PCA
+from sklearn.svm import SVC
 from utils import Utils
 
 
@@ -216,6 +218,8 @@ class Datasets:
         y = train_data['is_sa']
         X_val = validation_res.drop(columns=['msisdn', 'start_time', 'end_time', 'open_datetime',
                                              'update_time', 'date', 'date_c'])
+        X = X.ffill().bfill()
+        X_val = X_val.ffill().bfill()
         return X, y, X_val
 
     @staticmethod
@@ -227,28 +231,60 @@ class Datasets:
         return X_resampled, y_resampled
 
     @staticmethod
-    def feature_selection(X, y, logger, n=500):
+    def feature_selection(X, y, logger, strategy='embed', n=500):
         logger.info("Starting feature selection...")
-        embed = RandomForestClassifier(n_estimators=100, random_state=42)
-        embed.fit(X, y)
 
-        # 结合各个方法的特征重要性
-        logger.info("Combining feature importances from all methods...")
-        feature_scores = embed.feature_importances_
+        if strategy == 'filter':
+            # 互信息
+            logger.info("Calculating mutual information...")
+            mi = mutual_info_classif(X, y)
+            indices = np.argsort(mi)[-n:]
+        elif strategy == 'embed':
+            # Random Forest Feature Importances
+            logger.info(
+                "Calculating feature importances using Random Forest...")
+            rf = RandomForestClassifier(n_estimators=100, random_state=42)
+            rf.fit(X, y)
+            rf_importances = rf.feature_importances_
+            indices = np.argsort(rf_importances)[-n:]
+        elif strategy == 'wrap':
+            # Recursive Feature Elimination (RFE)
+            logger.info("Performing RFE...")
+            rfe = RFE(estimator=SVC(kernel="linear"),
+                      n_features_to_select=n, step=1)
+            rfe.fit(X, y)
+            indices = np.where(rfe.support_)[0]
+        elif strategy == 'comb':
+            # 合并结果
+            logger.info(
+                "Combining the results of RF and RFE...")
+            # mi = mutual_info_classif(X, y)
+            # mi_indices = np.argsort(mi)[-n:]
+            rf = RandomForestClassifier(n_estimators=100, random_state=42)
+            rf.fit(X, y)
+            rf_importances = rf.feature_importances_
+            rf_indices = np.argsort(rf_importances)[-n:]
+            rfe = RFE(estimator=SVC(kernel="linear"),
+                      n_features_to_select=n, step=1)
+            rfe.fit(X, y)
+            rfe_indices = np.where(rfe.support_)[0]
+            
+            indices = np.union1d(rf_indices, rfe_indices)
+            indices = indices[:n] if len(
+                indices) > n else indices
 
-        # 选择最重要的特征
-        logger.info("Selecting top features...")
-        indices = np.argsort(feature_scores)[-n:]  # 选择排名前n的特征
         selected_features = X.columns[indices]
 
-        # 使用选中的特征重新构建数据集
         X_selected = X[selected_features]
+        X_selected.to_csv(
+            f'/sda/xuhaowei/Research/Tele/Input/processed/selected_features_n={n}_strategy={strategy}.csv', index=False)
         logger.info("Feature selection completed successfully.")
         return X_selected, selected_features
 
     @staticmethod
     def apply_pca(X, logger, n_components=100):
-        logger.info("Applying PCA for dimensionality reduction...")
+        logger.info(
+            f"Applying PCA for dimensionality reduction from {X.shape[1]} to {n_components}...")
         pca = PCA(n_components=n_components)
         X_pca = pca.fit_transform(X)
         logger.info("PCA applied successfully.")
@@ -269,6 +305,12 @@ class Datasets:
 
         y_pred = model.predict_proba(X_test)[:, 1]
         auc = roc_auc_score(y_test, y_pred)
+        # 计算训练集所有样本的预测概率
+        y_pred_prob = model.predict_proba(X)[:, 1]
+        # 创建一个与原始数据相同大小的权重数组，初始值为1
+        sample_weights = np.ones(y.shape[0])
+        # 将测试集样本的权重更新为其预测概率
+        sample_weights[X.index] = y_pred_prob
 
         logger.info(f'Adversarial validation AUC: {auc}')
 
@@ -281,8 +323,9 @@ class Datasets:
         else:
             logger.info(
                 "Adversarial validation AUC is low. Training and validation sets have similar distributions.")
+        return sample_weights
 
-    def run_pipeline(self, file_paths, date_fields, str_fields, logger):
+    def run_pipeline(self, file_paths, date_fields, str_fields, logger, use_pca=False, n_features=500, n_pca_components=100):
         data_frames = self.load_and_clean_data(file_paths, logger)
         train_res, train_ans, validation_res = data_frames[
             'train_res'], data_frames['train_ans'], data_frames['validation_res']
@@ -291,19 +334,20 @@ class Datasets:
             {'train_data': train_data, 'validation_res': validation_res}, date_fields, str_fields, logger)
         data_frames = self.feature_engineering(data_frames, logger)
         train_data, validation_res = data_frames['train_data'], data_frames['validation_res']
+
         X, y, X_val = self.prepare_datasets(train_data, validation_res)
-        # self.adversarial_validation(X, X_val, logger)
-        # 处理类不平衡
+
         X_resampled, y_resampled = self.handle_imbalance(X, y, logger)
 
-        # 特征选择
         X_resampled_selected, selected_features = self.feature_selection(
-            X_resampled, y_resampled, logger, n=1000)
+            X_resampled, y_resampled, logger, n=n_features, strategy='embed')
         X_val_selected = X_val[selected_features]
 
-        # Apply PCA after feature selection
-        X_resampled_pca = self.apply_pca(
-            X_resampled_selected, n_components=500)
-        X_val_pca = self.apply_pca(X_val_selected, n_components=500)
-
-        return X_resampled_pca, y_resampled, X_val_pca, validation_res
+        if use_pca:
+            X_resampled_pca = self.apply_pca(
+                X_resampled_selected, logger, n_components=n_pca_components)
+            X_val_pca = self.apply_pca(
+                X_val_selected, logger, n_components=n_pca_components)
+            return X_resampled_pca, y_resampled, X_val_pca, validation_res
+        else:
+            return X_resampled_selected, y_resampled, X_val_selected, validation_res

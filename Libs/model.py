@@ -1,3 +1,5 @@
+# The `Models` class contains methods for evaluating, training, and predicting with multiple machine learning models,
+# including hyperparameter tuning, ensemble learning, adversarial training, and pseudo-labeling.
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -9,10 +11,11 @@ from sklearn.ensemble import (AdaBoostClassifier, ExtraTreesClassifier,
                               HistGradientBoostingClassifier,
                               RandomForestClassifier, StackingClassifier,
                               VotingClassifier)
-from sklearn.experimental import enable_halving_search_cv  # noqa
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import (HalvingGridSearchCV, cross_val_score,
-                                     train_test_split)
+from sklearn.experimental import enable_halving_search_cv  # noqa
+from sklearn.model_selection import HalvingGridSearchCV, cross_val_score, StratifiedKFold
+
+from data import Datasets
 
 
 class Models:
@@ -21,11 +24,11 @@ class Models:
         logger.info("Evaluating multiple models...")
         models = {
             # 'RandomForest': RandomForestClassifier(),
-            # 'ExtraTrees': ExtraTreesClassifier(),
+            # 'ExtraTrees': ExtraTreesClassifier(n_jobs=-1),
             # 'AdaBoost': AdaBoostClassifier(),
             # 'HistGradientBoosting': HistGradientBoostingClassifier(),
             # 'XGBoost': xgb.XGBClassifier(use_label_encoder=False, eval_metric='logloss'),
-            'LightGBM': lgb.LGBMClassifier(),
+            'LightGBM': lgb.LGBMClassifier(n_jobs=-1),
             # 'CatBoost': CatBoostClassifier(verbose=0),
         }
 
@@ -63,9 +66,13 @@ class Models:
                 'verbosity': [0],
             },
             'LightGBM': {
-                'n_estimators': [100, 200, 300],
-                'learning_rate': [0.01, 0.1, 0.2],
-                'num_leaves': [31, 62, 127]
+                'boosting_type': ['gbdt', 'dart'],
+                'min_child_samples': [1, 5, 7, 10, 15, 20, 35, 50, 100, 200, 500, 1000],
+                'num_leaves': [2, 4, 7, 10, 15, 20, 25, 30, 35, 40, 50, 65, 80, 100, 125, 150, 200, 250, 500],
+                'colsample_bytree': [0.7, 0.9, 1.0],
+                'subsample': [0.7, 0.9, 1.0],
+                'learning_rate': [0.01, 0.05, 0.1],
+                'n_estimators': [5, 20, 35, 50, 75, 100, 150, 200, 350, 500, 750, 1000, 1500, 2000],
             },
             'CatBoost': {
                 'iterations': [100, 200, 300],
@@ -99,32 +106,6 @@ class Models:
                            for name, model, score in sorted_models[:k]]
         logger.info("Best models selected for ensemble.")
         return selected_models
-
-    @staticmethod
-    def adversarial_training(model, X, y, epsilon=0.01):
-        """
-        对抗训练函数，使用FGSM生成对抗样本并加入训练集
-        """
-        model.fit(X, y)  # 首先用原始数据训练模型
-
-        X_adv = X.copy()  # 创建对抗样本的副本
-        X_tensor = torch.tensor(X.values, dtype=torch.float32)
-        y_tensor = torch.tensor(y.values, dtype=torch.long)
-
-        X_tensor.requires_grad = True
-        outputs = model.predict_proba(X)[:, 1]
-        loss = F.cross_entropy(torch.tensor(outputs).reshape(-1, 1), y_tensor)
-
-        model.zero_grad()
-        loss.backward()
-        X_adv += epsilon * X_tensor.grad.sign().numpy()
-
-        # 将原始样本和对抗样本结合起来训练模型
-        X_combined = np.vstack((X, X_adv))
-        y_combined = np.hstack((y, y))
-
-        model.fit(X_combined, y_combined)
-        return model
 
     @staticmethod
     def train_model(X, y, best_models, logger):
@@ -163,40 +144,38 @@ class Models:
         val_pred = model.predict(X_val)
 
         # 对每个 msisdn 进行聚合，如果任何一次预测为1，则最终预测为1
-        validation_res['is_sa'] = val_pred
+        validation_res['is_sa'] = val_pred.astype(int)
         final_predictions = validation_res.groupby(
             'msisdn')['is_sa'].max().reset_index()
 
         final_predictions.to_csv(output_path, index=False)
         logger.info("Results saved successfully.")
 
-    def run_pipeline(self, X, y, X_val, validation_res, output_path, logger, tune_hyperparameters=True, adversarial_training=True):
-
-        # 模型评估并选择最佳模型
+    def run_pipeline(self, X, y, X_val, validation_res, output_path, logger, tune_hyperparameters=False, adversarial_val=True, use_pseudo_labeling=False):
         best_models = self.evaluate_models(
             X, y, logger, tune_hyperparameters=tune_hyperparameters)
 
-        # 模型训练
-        if adversarial_training:
-            final_model = self.train_model(X, y, best_models, logger)
-        else:
+        if adversarial_val:
+            sample_weights = Datasets.adversarial_validation(X, X_val, logger)
             estimators = [(name, model) for name, model in best_models]
             meta_learner = LogisticRegression(max_iter=1000)
-            final_model = StackingClassifier(
+            ensemble_model = StackingClassifier(
                 estimators=estimators, final_estimator=meta_learner, cv=5)
-            final_model.fit(X, y)
-
-        # 伪标签
-        X_combined, y_combined = self.pseudo_labeling(
-            final_model, X, y, X_val, logger)
-
-        # 再次训练模型（包括伪标签）
-        if adversarial_training:
-            final_model = self.train_model(
-                X_combined, y_combined, best_models, logger)
+            cv_scores = cross_val_score(ensemble_model, X, y, cv=StratifiedKFold(
+                n_splits=5), scoring='f1', fit_params={'sample_weight': sample_weights})
+            logger.info(
+                f'Ensemble Model - Cross-Validated F1 Score: {cv_scores.mean()}')
+            ensemble_model.fit(X, y, sample_weight=sample_weights)
         else:
-            final_model.fit(X_combined, y_combined)
+            ensemble_model = self.train_model(X, y, best_models, logger)
 
-        # 预测并保存结果
-        self.predict_and_save(final_model, X_val,
+        if use_pseudo_labeling:
+            X_combined, y_combined = self.pseudo_labeling(
+                ensemble_model, X, y, X_val, logger)
+            ensemble_model.fit(X_combined, y_combined)
+        else:
+            ensemble_model.fit(X, y)
+        logger.info("Ensemble model training completed successfully.")
+
+        self.predict_and_save(ensemble_model, X_val,
                               validation_res, output_path, logger)
